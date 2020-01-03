@@ -1,0 +1,283 @@
+### WINE QUALITY ###
+########################
+# Data Wrangling
+########################
+# Install any neccessary libraries
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+
+# Gather datasets 
+url_red <- "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
+url_white <- "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-white.csv"
+
+red_data <- read.csv(url_red, sep=';')
+white_data <- read.csv(url_white, sep=';')
+
+# Merge the two separate red and white wine datasets into one dataset
+wine <- rbind(red_data, white_data)
+
+# Adding a column to classify an excellent wine quality
+table(wine$quality)
+wine <- wine %>% mutate(Excellent = ifelse(quality > 6, 1, 0))
+wine$Excellent <- as.factor(wine$Excellent)
+
+# remove files no longer necessary 
+rm(url_red, url_white, red_data, white_data)
+
+
+# Splitting data into test and train sets 80/20 split
+set.seed(42)
+#set.seed(1, sample.kind="Rounding") #if using R 3.5 or later
+test_index <- createDataPartition(wine$Excellent, times = 1, p = 0.2, list = FALSE)
+train_set <- wine[-test_index,]
+test_set <- wine[test_index,]
+
+########################
+# Exploratory Analysis
+########################
+
+# data is in tidy format
+wine %>% as.tibble() 
+
+# checking the structure of the data
+str(wine)
+
+# checking basic summary statistics 
+summary(wine)
+
+# Number of rows and columns
+nrow(wine)  
+ncol(wine) 
+
+# Check for missing values
+any(is.na(wine))
+
+
+# Install additional libraries that may be useful for analysis and modeling
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(reshape2)) install.packages("reshape2", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randomForest", repos = "http://cran.us.r-project.org")
+if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org")
+
+
+
+# Overall Average Quality
+mean(wine$quality)
+
+# Distribution in Quality
+wine %>% 
+  ggplot(aes(quality)) + 
+  geom_bar() +
+  ggtitle("Distribution of Quality")
+
+# Percentage of Excellent wines
+mean(wine$Excellent == 1)
+
+ 
+# Find any intresting correlations using heatmap
+train.cor <- cor(subset(wine, select=-c(Excellent)))
+
+ggplot(melt(train.cor), aes(Var1, Var2, fill=value)) +
+  geom_tile(color = "white") + #color white is for border
+  scale_fill_gradient2(low="blue", high="red", mid="white") +
+  theme_minimal() + # minimal theme
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, size = 12, hjust = 1)) + 
+  coord_fixed()
+
+
+
+# Density Plots
+ggplot(wine, aes(alcohol, color=Excellent, fill=Excellent)) +
+  geom_density(alpha = 0.4) 
+
+ggplot(wine, aes(total.sulfur.dioxide, color=Excellent, fill=Excellent)) +
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(chlorides, color=Excellent, fill=Excellent)) +
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(volatile.acidity, color=Excellent, fill=Excellent)) +
+  geom_density(alpha = 0.4)
+  
+ggplot(wine, aes(free.sulfur.dioxide, color=Excellent, fill=Excellent)) +
+  geom_density(alpha = 0.4) 
+
+ggplot(wine, aes(residual.sugar, color=Excellent, fill=Excellent)) +
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(density, color=Excellent, fill=Excellent)) + 
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(fixed.acidity, color=Excellent, fill=Excellent)) + 
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(sulphates, color=Excellent, fill=Excellent)) + 
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(citric.acid, color=Excellent, fill=Excellent)) + 
+  geom_density(alpha = 0.4)
+
+ggplot(wine, aes(pH, color=Excellent, fill=Excellent)) + 
+  geom_density(alpha = 0.4)
+
+
+
+
+
+# Correlation with quality
+ggplot(wine, aes(alcohol, quality)) +
+  geom_point() +
+  geom_smooth() +
+  ggtitle("Quality by Alcohol")
+
+ggplot(wine, aes(density, quality)) +
+  geom_point() +
+  geom_smooth() +
+  ggtitle("Quality by Density")
+
+
+
+
+# Stacked bar
+ggplot(wine, aes(alcohol, fill=Excellent)) +
+  # geom_histogram(bins=30, position="stack")
+  geom_histogram(bins=30, position="fill")
+
+ggplot(wine, aes(total.sulfur.dioxide, fill=Excellent)) +
+  # geom_histogram(bins=30, position="stack")
+  geom_histogram(bins=30, position="fill")
+
+ggplot(wine, aes(free.sulfur.dioxide, fill=Excellent)) +
+  # geom_histogram(bins=30, position="stack")
+  geom_histogram(bins=30, position="fill")
+
+ggplot(wine, aes(density, fill=Excellent)) +
+  # geom_histogram(bins=30, position="stack")
+  geom_histogram(bins=30, position="fill")
+
+ggplot(wine, aes(citric.acid, fill=Excellent)) +
+  # geom_histogram(bins=30, position="stack")
+  geom_histogram(bins=30, position="fill")
+
+
+
+
+
+########################
+# MODELING
+######################## 
+
+# Logistic Regression Model
+set.seed(1)
+train_glm <- train(Excellent ~ .-quality, method = "glm", data = train_set)
+glm_pred <- predict(train_glm, test_set, type = "raw")
+confusionMatrix(glm_pred, test_set$Excellent)$overall[["Accuracy"]]  
+
+
+# LDA Model      
+set.seed(1)
+train_lda <- train(Excellent ~ .-quality, method = "lda", data = train_set)
+lda_pred <- predict(train_lda, test_set)
+confusionMatrix(lda_pred, test_set$Excellent)$overall[["Accuracy"]]  
+
+
+# QDA Model     
+set.seed(1)
+train_lda <- train(Excellent ~ .-quality, method = "qda", data = train_set)
+qda_pred <- predict(train_lda, test_set)
+mean(lda_pred == test_set$Excellent) 
+
+
+# Loess Model 
+set.seed(1)
+train_loess <- train(Excellent ~ .-quality, 
+                     data = train_set,
+                     method = "gamLoess")
+loess_pred <- predict(train_loess, test_set)
+mean(loess_pred == test_set$Excellent)
+
+
+# K Nearest Neighbors Model
+set.seed(1)
+train_knn <- train(Excellent ~ .-quality, 
+                   method = "knn", 
+                   data = train_set,
+                   tuneGrid = data.frame(k = seq(3,51,2)))
+ggplot(train_knn, highlight = TRUE)  
+train_knn$bestTune
+knn_pred <- predict(train_knn, test_set, type = "raw")
+confusionMatrix(knn_pred, test_set$Excellent)$overall["Accuracy"]
+
+
+# Cross Validation Model
+set.seed(1)
+train_knn_cross <- train(Excellent ~ .-quality, 
+                         method = "knn", 
+                         data = train_set,
+                         tuneGrid = data.frame(k = seq(3,51,2)),
+                         trControl = trainControl(method = "cv", number = 10, p = .9))
+ggplot(train_knn_cross, highlight = TRUE) 
+train_knn_cross$bestTune
+knn_cross_pred <- predict(train_knn_cross, test_set, type = "raw")
+confusionMatrix(knn_cross_pred, test_set$Excellent)$overall["Accuracy"]
+
+
+# Rpart
+set.seed(1)
+train_tree <- train(Excellent ~ .-quality, 
+                    method = "rpart", 
+                    data = train_set,
+                    tuneGrid = data.frame(cp = seq(0, 0.05, 0.002)))
+ggplot(train_tree, highlight = TRUE) 
+train_tree$bestTune
+
+rpart_pred <- predict(train_tree, test_set, type = "raw")
+confusionMatrix(rpart_pred,test_set$Excellent)$overall["Accuracy"]
+
+train_tree$finalModel
+plot(train_tree$finalModel, margin = 0.1)
+text(train_tree$finalModel)
+
+
+# Random Forest Model
+set.seed(1)
+train_rf <- train(Excellent ~ .-quality, 
+                  method = "rf", 
+                  data = train_set,
+                  tuneGrid = data.frame(mtry = seq(1:7)),
+                  ntree = 100)
+ggplot(train_rf, highlight = TRUE) 
+train_rf$bestTune
+
+rf_pred <- predict(train_rf, test_set, type = "raw")
+confusionMatrix(rf_pred,test_set$Excellent)$overall["Accuracy"]
+
+varImp(train_rf)
+
+
+#######################
+# Results 
+#######################
+models <- c("Logistic Regression", "LDA", "QDA", "Loess", 
+            "K nearest neghbors", "Cross Validation", "Rpart", "Random forest")
+accuracy <- c(mean(glm_pred == test_set$Excellent), 
+              mean(lda_pred == test_set$Excellent),
+              mean(qda_pred == test_set$Excellent),
+              mean(loess_pred == test_set$Excellent),
+              mean(knn_pred == test_set$Excellent),
+              mean(knn_cross_pred == test_set$Excellent),
+              mean(rpart_pred == test_set$Excellent),
+              mean(rf_pred == test_set$Excellent))
+Model_Results <- data.frame(Model = models, Accuracy = accuracy)
+Model_Results
+
+
+
+
+
+
+
+
+
+
